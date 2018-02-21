@@ -4356,7 +4356,8 @@ static int mov_write_tfdt_tag(AVIOContext *pb, MOVTrack *track)
     ffio_wfourcc(pb, "tfdt");
     avio_w8(pb, 1); /* version */
     avio_wb24(pb, 0);
-    avio_wb64(pb, track->frag_start);
+    avio_wb64(pb, track->start_dts + track->frag_start +
+                  track->cluster[0].cts);
     return update_size(pb, pos);
 }
 
