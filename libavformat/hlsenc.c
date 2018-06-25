@@ -804,6 +804,7 @@ static int hls_mux_init(AVFormatContext *s, VariantStream *vs)
         av_dict_copy(&options, hls->format_options, 0);
         av_dict_set(&options, "fflags", "-autobsf", 0);
         av_dict_set(&options, "movflags", "frag_custom+dash+delay_moov", 0);
+        av_dict_set(&options, "strict", "-2", 0);
         // fMP4 fragment index (moof.mfhd.sequence_number) starts at 1
         // See ISO/IEC 14496-12:2015 Section 8.8.5.1
         av_dict_set_int(&options, "fragment_index", hls->start_sequence+1, 0);
