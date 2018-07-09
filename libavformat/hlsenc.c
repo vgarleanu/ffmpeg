@@ -2265,7 +2265,7 @@ static int hls_write_packet(AVFormatContext *s, AVPacket *pkt)
         }
 
         if (vs->fmp4_init_mode) {
-            vs->number--;
+            //vs->number--;
         }
 
         if (hls->segment_type == SEGMENT_TYPE_FMP4) {
