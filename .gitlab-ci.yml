@@ -4,11 +4,6 @@ image: ubuntu:bionic
 before_script:
   - cd ffmpeg-static
   - bash ubuntu-deps.sh
-  - ln -s $CI_PROJECT_DIR/ $GOPATH/src/$REPO_NAME
-  - cd $GOPATH/src/$REPO_NAME
-  - go get github.com/jteeuwen/go-bindata/...
-  - go get github.com/elazarl/go-bindata-assetfs/...
-  - make ready-ci
 
 stages:
     - build
@@ -19,6 +14,6 @@ compile:
       - bash build.sh
     artifacts:
       paths:
-        - build/
+        - ffmpeg-static/bin/
       expire_in: 2 week
 

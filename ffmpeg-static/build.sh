@@ -216,7 +216,7 @@ download \
 #  "ffmpeg4.0.tar.gz" \
 #  "4749a5e56f31e7ccebd3f9924972220f" \
 #  "https://github.com/FFmpeg/FFmpeg/archive"
-git clone https://gitlab.com/olaris/ffmpeg
+#git clone https://gitlab.com/olaris/ffmpeg
 
 [ $download_only -eq 1 ] && exit 0
 
