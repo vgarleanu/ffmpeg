@@ -1,5 +1,5 @@
 #!/bin/bash
-
+apt-get update
 apt-get install build-essential curl tar pkg-config
 apt-get -y --force-yes install \
   autoconf \
