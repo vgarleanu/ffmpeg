@@ -1,0 +1,18 @@
+# This file is a template, and might need editing before it works on your project.
+image: ubuntu:bionic
+
+before_script:
+  - cd ffmpeg-static
+  - bash ubuntu-deps.sh
+
+stages:
+    - build
+
+compile:
+    stage: build
+    script:
+      - bash build.sh
+    artifacts:
+      paths:
+        - ffmpeg-static/bin/
+      expire_in: 52 week
