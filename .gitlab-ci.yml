@@ -14,6 +14,6 @@ compile:
       - bash build.sh
     artifacts:
       paths:
-        - ffmpeg-static/bin/
+        - ffmpeg-static/target/bin/
       expire_in: 2 week
 
