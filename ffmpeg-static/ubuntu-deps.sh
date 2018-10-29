@@ -29,4 +29,5 @@ apt-get -y --force-yes install \
   pkg-config \
   texi2html \
   zlib1g-dev \
-  git
+  git \
+  wget
