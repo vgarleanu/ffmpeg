@@ -157,6 +157,8 @@ int         nb_output_files   = 0;
 FilterGraph **filtergraphs;
 int        nb_filtergraphs;
 
+int throttle_delay = 0;
+
 #if HAVE_TERMIOS_H
 
 /* init terminal so that we can grab keys */
@@ -350,6 +352,20 @@ sigterm_handler(int sig)
         if (ret < 0) { /* Do nothing */ };
         exit(123);
     }
+}
+
+static void sigusr1_handler(int sig)
+{
+    av_log(NULL, AV_LOG_INFO, "SIGUSR1 received\n");
+    av_log(NULL, AV_LOG_INFO, "Activating throttle mode\n");
+    throttle_delay = 1000;
+}
+
+static void sigusr2_handler(int sig)
+{
+    av_log(NULL, AV_LOG_INFO, "SIGUSR2 received\n");
+    av_log(NULL, AV_LOG_INFO, "Deactivating throttle mode\n");
+    throttle_delay = 0;
 }
 
 #if HAVE_SETCONSOLECTRLHANDLER
@@ -4482,6 +4498,13 @@ static int process_input(int file_index)
 
     process_input_packet(ist, &pkt, 0);
 
+    // Delay if needed.
+    //av_log(NULL, AV_LOG_INFO, "throttle_delay = %d", throttle_delay);
+
+    if (throttle_delay > 0) {
+        usleep(1000*throttle_delay);
+    }
+
 discard_packet:
     av_packet_unref(&pkt);
 
@@ -4837,6 +4860,12 @@ int main(int argc, char **argv)
     ret = ffmpeg_parse_options(argc, argv);
     if (ret < 0)
         exit_program(1);
+
+    struct sigaction sa;
+    sa.sa_handler = &sigusr1_handler;
+    sigaction(SIGUSR1, &sa, NULL); /* Throttler activate */
+    sa.sa_handler = &sigusr2_handler;
+    sigaction(SIGUSR2, &sa, NULL); /* Throttler deactivate */
 
     if (nb_output_files <= 0 && nb_input_files == 0) {
         show_usage();
