@@ -11,7 +11,7 @@ stages:
 compile:
     stage: build
     script:
-      - bash build.sh
+      - bash build.sh -f ../
     artifacts:
       paths:
         - ffmpeg-static/bin/
