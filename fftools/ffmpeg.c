@@ -740,11 +740,11 @@ static void write_packet(OutputFile *of, AVPacket *pkt, OutputStream *ost, int u
             if (ret < 0)
                 exit_program(1);
         }
-        ret = av_packet_ref(&tmp_pkt, pkt);
+        ret = av_packet_make_refcounted(pkt);
         if (ret < 0)
             exit_program(1);
+        av_packet_move_ref(&tmp_pkt, pkt);
         av_fifo_generic_write(ost->muxing_queue, &tmp_pkt, sizeof(tmp_pkt), NULL);
-        av_packet_unref(pkt);
         return;
     }
 
@@ -1137,7 +1137,7 @@ static void do_video_out(OutputFile *of,
             format_video_sync != VSYNC_PASSTHROUGH &&
             format_video_sync != VSYNC_DROP) {
             if (delta0 < -0.6) {
-                av_log(NULL, AV_LOG_WARNING, "Past duration %f too large\n", -delta0);
+                av_log(NULL, AV_LOG_VERBOSE, "Past duration %f too large\n", -delta0);
             } else
                 av_log(NULL, AV_LOG_DEBUG, "Clipping frame in rate conversion by %f\n", -delta0);
             sync_ipts = ost->sync_opts;
@@ -1810,9 +1810,11 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
     if (total_size < 0) av_bprintf(&buf_script, "total_size=N/A\n");
     else                av_bprintf(&buf_script, "total_size=%"PRId64"\n", total_size);
     if (pts == AV_NOPTS_VALUE) {
+        av_bprintf(&buf_script, "out_time_us=N/A\n");
         av_bprintf(&buf_script, "out_time_ms=N/A\n");
         av_bprintf(&buf_script, "out_time=N/A\n");
     } else {
+        av_bprintf(&buf_script, "out_time_us=%"PRId64"\n", pts);
         av_bprintf(&buf_script, "out_time_ms=%"PRId64"\n", pts);
         av_bprintf(&buf_script, "out_time=%s%02d:%02d:%02d.%06d\n",
                    hours_sign, hours, mins, secs, us);
@@ -2124,10 +2126,12 @@ static void check_decode_result(InputStream *ist, int *got_output, int ret)
     if (ret < 0 && exit_on_error)
         exit_program(1);
 
-    if (exit_on_error && *got_output && ist) {
+    if (*got_output && ist) {
         if (ist->decoded_frame->decode_error_flags || (ist->decoded_frame->flags & AV_FRAME_FLAG_CORRUPT)) {
-            av_log(NULL, AV_LOG_FATAL, "%s: corrupt decoded frame in stream %d\n", input_files[ist->file_index]->ctx->url, ist->st->index);
-            exit_program(1);
+            av_log(NULL, exit_on_error ? AV_LOG_FATAL : AV_LOG_WARNING,
+                   "%s: corrupt decoded frame in stream %d\n", input_files[ist->file_index]->ctx->url, ist->st->index);
+            if (exit_on_error)
+                exit_program(1);
         }
     }
 }
@@ -3086,7 +3090,13 @@ static int init_output_stream_streamcopy(OutputStream *ost)
                "Error setting up codec context options.\n");
         return ret;
     }
-    avcodec_parameters_from_context(par_src, ost->enc_ctx);
+
+    ret = avcodec_parameters_from_context(par_src, ost->enc_ctx);
+    if (ret < 0) {
+        av_log(NULL, AV_LOG_FATAL,
+               "Error getting reference codec parameters.\n");
+        return ret;
+    }
 
     if (!codec_tag) {
         unsigned int codec_tag_tmp;
@@ -4069,49 +4079,63 @@ static void *input_thread(void *arg)
     return NULL;
 }
 
+static void free_input_thread(int i)
+{
+    InputFile *f = input_files[i];
+    AVPacket pkt;
+
+    if (!f || !f->in_thread_queue)
+        return;
+    av_thread_message_queue_set_err_send(f->in_thread_queue, AVERROR_EOF);
+    while (av_thread_message_queue_recv(f->in_thread_queue, &pkt, 0) >= 0)
+        av_packet_unref(&pkt);
+
+    pthread_join(f->thread, NULL);
+    f->joined = 1;
+    av_thread_message_queue_free(&f->in_thread_queue);
+}
+
 static void free_input_threads(void)
 {
     int i;
 
-    for (i = 0; i < nb_input_files; i++) {
-        InputFile *f = input_files[i];
-        AVPacket pkt;
+    for (i = 0; i < nb_input_files; i++)
+        free_input_thread(i);
+}
 
-        if (!f || !f->in_thread_queue)
-            continue;
-        av_thread_message_queue_set_err_send(f->in_thread_queue, AVERROR_EOF);
-        while (av_thread_message_queue_recv(f->in_thread_queue, &pkt, 0) >= 0)
-            av_packet_unref(&pkt);
+static int init_input_thread(int i)
+{
+    int ret;
+    InputFile *f = input_files[i];
 
-        pthread_join(f->thread, NULL);
-        f->joined = 1;
+    if (nb_input_files == 1)
+        return 0;
+
+    if (f->ctx->pb ? !f->ctx->pb->seekable :
+        strcmp(f->ctx->iformat->name, "lavfi"))
+        f->non_blocking = 1;
+    ret = av_thread_message_queue_alloc(&f->in_thread_queue,
+                                        f->thread_queue_size, sizeof(AVPacket));
+    if (ret < 0)
+        return ret;
+
+    if ((ret = pthread_create(&f->thread, NULL, input_thread, f))) {
+        av_log(NULL, AV_LOG_ERROR, "pthread_create failed: %s. Try to increase `ulimit -v` or decrease `ulimit -s`.\n", strerror(ret));
         av_thread_message_queue_free(&f->in_thread_queue);
+        return AVERROR(ret);
     }
+
+    return 0;
 }
 
 static int init_input_threads(void)
 {
     int i, ret;
 
-    if (nb_input_files == 1)
-        return 0;
-
     for (i = 0; i < nb_input_files; i++) {
-        InputFile *f = input_files[i];
-
-        if (f->ctx->pb ? !f->ctx->pb->seekable :
-            strcmp(f->ctx->iformat->name, "lavfi"))
-            f->non_blocking = 1;
-        ret = av_thread_message_queue_alloc(&f->in_thread_queue,
-                                            f->thread_queue_size, sizeof(AVPacket));
+        ret = init_input_thread(i);
         if (ret < 0)
             return ret;
-
-        if ((ret = pthread_create(&f->thread, NULL, input_thread, f))) {
-            av_log(NULL, AV_LOG_ERROR, "pthread_create failed: %s. Try to increase `ulimit -v` or decrease `ulimit -s`.\n", strerror(ret));
-            av_thread_message_queue_free(&f->in_thread_queue);
-            return AVERROR(ret);
-        }
     }
     return 0;
 }
@@ -4253,7 +4277,7 @@ static int process_input(int file_index)
     AVFormatContext *is;
     InputStream *ist;
     AVPacket pkt;
-    int ret, i, j;
+    int ret, thread_ret, i, j;
     int64_t duration;
     int64_t pkt_dts;
 
@@ -4276,7 +4300,15 @@ static int process_input(int file_index)
                 avcodec_flush_buffers(avctx);
             }
         }
+#if HAVE_THREADS
+        free_input_thread(file_index);
+#endif
         ret = seek_to_start(ifile, is);
+#if HAVE_THREADS
+        thread_ret = init_input_thread(file_index);
+        if (thread_ret < 0)
+            return thread_ret;
+#endif
         if (ret < 0)
             av_log(NULL, AV_LOG_WARNING, "Seek to start failed.\n");
         else
@@ -4336,9 +4368,11 @@ static int process_input(int file_index)
     if (ist->discard)
         goto discard_packet;
 
-    if (exit_on_error && (pkt.flags & AV_PKT_FLAG_CORRUPT)) {
-        av_log(NULL, AV_LOG_FATAL, "%s: corrupt input packet in stream %d\n", is->url, pkt.stream_index);
-        exit_program(1);
+    if (pkt.flags & AV_PKT_FLAG_CORRUPT) {
+        av_log(NULL, exit_on_error ? AV_LOG_FATAL : AV_LOG_WARNING,
+               "%s: corrupt input packet in stream %d\n", is->url, pkt.stream_index);
+        if (exit_on_error)
+            exit_program(1);
     }
 
     if (debug_ts) {
