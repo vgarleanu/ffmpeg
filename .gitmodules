@@ -1,3 +1,0 @@
-[submodule "ffmpeg-static"]
-	path = ffmpeg-static
-	url = https://gitlab.com/olaris/ffmpeg.git
