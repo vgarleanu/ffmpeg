@@ -2,6 +2,7 @@
 image: ubuntu:bionic
 
 before_script:
+  - git submodule update --init --recursive
   - cd ffmpeg-static
   - bash ubuntu-deps.sh
 
