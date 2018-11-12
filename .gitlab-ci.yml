@@ -1,8 +1,10 @@
 # This file is a template, and might need editing before it works on your project.
 image: ubuntu:bionic
 
+variables:
+  GIT_SUBMODULE_STRATEGY: normal
+
 before_script:
-  - git submodule update --init --recursive
   - cd ffmpeg-static
   - bash ubuntu-deps.sh
 
