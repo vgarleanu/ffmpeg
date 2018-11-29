@@ -22,6 +22,7 @@
 
 #include "ffmpeg.h"
 #include "cmdutils.h"
+#include "olarisutil.h"
 
 #include "libavformat/avformat.h"
 
@@ -3692,6 +3693,10 @@ const OptionDef options[] = {
         "initialise hardware device", "args" },
     { "filter_hw_device", HAS_ARG | OPT_EXPERT, { .func_arg = opt_filter_hw_device },
         "set hardware device used when filtering", "device" },
+
+    // Olaris-specific options
+    { "olaris_feedback_url", HAS_ARG | OPT_EXPERT, { .func_arg = olaris_opt_feedback_url },
+        "HTTP feedback URL for Olaris", "olaris_feedback_url" },
 
     { NULL, },
 };

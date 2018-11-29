@@ -106,6 +106,8 @@
 
 #include "libavutil/avassert.h"
 
+#include "olarisutil.h"
+
 const char program_name[] = "ffmpeg";
 const int program_birth_year = 2000;
 
@@ -352,20 +354,6 @@ sigterm_handler(int sig)
         if (ret < 0) { /* Do nothing */ };
         exit(123);
     }
-}
-
-static void sigusr1_handler(int sig)
-{
-    av_log(NULL, AV_LOG_INFO, "SIGUSR1 received\n");
-    av_log(NULL, AV_LOG_INFO, "Activating throttle mode\n");
-    throttle_delay = 1000;
-}
-
-static void sigusr2_handler(int sig)
-{
-    av_log(NULL, AV_LOG_INFO, "SIGUSR2 received\n");
-    av_log(NULL, AV_LOG_INFO, "Deactivating throttle mode\n");
-    throttle_delay = 0;
 }
 
 #if HAVE_SETCONSOLECTRLHANDLER
@@ -1684,6 +1672,12 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
     if (!print_stats && !is_last_report && !progress_avio)
         return;
 
+
+//PLEX
+    static int64_t run_time = 0;
+    static int64_t start_time = 0;
+//PLEX
+
     if (!is_last_report) {
         if (last_time == -1) {
             last_time = cur_time;
@@ -1692,6 +1686,14 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
         if ((cur_time - last_time) < 500000)
             return;
         last_time = cur_time;
+
+//PLEX
+        run_time = cur_time-last_time;
+        last_time = cur_time;
+
+        if (start_time == 0)
+            start_time = cur_time;
+//PLEX
     }
 
     t = (cur_time-timer_start) / 1000000.0;
@@ -1778,6 +1780,58 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
         if (is_last_report)
             nb_frames_drop += ost->last_dropped;
     }
+
+//PLEX
+    if (pts != AV_NOPTS_VALUE) {
+        static int64_t last_pts = 0;
+        static int lastRemaining = 0;
+        // Notify about progress.
+        int64_t secs = pts / AV_TIME_BASE;
+        int64_t totalSecs = input_files[0]->ctx->duration / AV_TIME_BASE;
+        char url[4096];
+
+        // Compute speed of transcode as a multiple of real-time.
+        float speed = (float)(pts - last_pts) / (float)run_time;
+        // Compute estimated time remaining.
+        int remainingSecs = (totalSecs - secs) / speed;
+        int smoothedRemaining = remainingSecs;
+        if (lastRemaining != 0)
+            smoothedRemaining = lastRemaining*0.5 + remainingSecs*0.5;
+
+        // Sanity check.
+        if (smoothedRemaining < 0)
+            smoothedRemaining = -1;
+        // Only pass back speed if we're not throttled.
+        if (throttle_delay == 0)
+            snprintf(url, sizeof(url),
+                     "%s?progress=%.1f&size=%lld&speed=%.1f&remaining=%d",
+                     olaris_feedback_url, (float)secs*100.0/totalSecs,
+
+                     total_size, speed, smoothedRemaining);
+        else
+            snprintf(url, sizeof(url),
+                     "%s?progress=%.1f&size=%lld&remaining=%d",
+                     olaris_feedback_url, (float)secs*100.0/totalSecs,
+                     total_size, smoothedRemaining);
+
+        char* reply = olaris_issue_http_request(url, "PUT");
+
+        // Handle throttling.
+        if (strstr(reply, "throttle")) {
+            if (throttle_delay == 0)
+                av_log(NULL, AV_LOG_INFO, "Activating throttle mode.");
+                throttle_delay = 1000;
+        } else {
+            if (throttle_delay > 0)
+                av_log(NULL, AV_LOG_INFO, "Deactivating throttle mode.");
+                throttle_delay = 0;
+        }
+
+        av_free(reply);
+        lastRemaining = remainingSecs;
+        last_pts = pts;
+    }
+// PLEX
 
     secs = FFABS(pts) / AV_TIME_BASE;
     us = FFABS(pts) % AV_TIME_BASE;
@@ -4894,12 +4948,6 @@ int main(int argc, char **argv)
     ret = ffmpeg_parse_options(argc, argv);
     if (ret < 0)
         exit_program(1);
-
-    struct sigaction sa;
-    sa.sa_handler = &sigusr1_handler;
-    sigaction(SIGUSR1, &sa, NULL); /* Throttler activate */
-    sa.sa_handler = &sigusr2_handler;
-    sigaction(SIGUSR2, &sa, NULL); /* Throttler deactivate */
 
     if (nb_output_files <= 0 && nb_input_files == 0) {
         show_usage();
