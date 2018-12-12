@@ -1683,7 +1683,8 @@ static void print_report(int is_last_report, int64_t timer_start, int64_t cur_ti
             last_time = cur_time;
             return;
         }
-        if ((cur_time - last_time) < 500000)
+        // OLARIS: Call back to server less often
+        if ((cur_time - last_time) < 2000000)
             return;
         last_time = cur_time;
 
