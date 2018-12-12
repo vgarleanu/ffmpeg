@@ -2974,17 +2974,28 @@ static int probe_file(WriterContext *wctx, const char *filename)
     REALLOCZ_ARRAY_STREAM(selected_streams,0,ifile.fmt_ctx->nb_streams);
 
     for (i = 0; i < ifile.fmt_ctx->nb_streams; i++) {
-        if (stream_specifier) {
-            ret = avformat_match_stream_specifier(ifile.fmt_ctx,
-                                                  ifile.fmt_ctx->streams[i],
-                                                  stream_specifier);
-            CHECK_END;
-            else
-                selected_streams[i] = ret;
-            ret = 0;
-        } else {
+        //if (stream_specifier) {
+        //    ret = avformat_match_stream_specifier(ifile.fmt_ctx,
+        //                                          ifile.fmt_ctx->streams[i],
+        //                                          stream_specifier);
+        //    CHECK_END;
+        //    else
+        //        selected_streams[i] = ret;
+        //    ret = 0;
+        //} else {
+        //    selected_streams[i] = 1;
+        //}
+        // OLARIS
+        // NOTE(Leon Handreke): Some files have weird data tracks, e.g. fonts.
+        // Because we can't specify multiple stream types in the stream specifier,
+        // hardcode here.
+        if (ifile.fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO ||
+                ifile.fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO ||
+                ifile.fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_SUBTITLE) {
             selected_streams[i] = 1;
         }
+        // OLARIS
+
         if (!selected_streams[i])
             ifile.fmt_ctx->streams[i]->discard = AVDISCARD_ALL;
     }
