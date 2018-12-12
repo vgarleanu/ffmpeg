@@ -2070,15 +2070,15 @@ static int mxf_parse_physical_source_package(MXFContext *mxf, MXFTrack *source_t
                 continue;
             }
 
-        if (physical_track->edit_rate.num <= 0 ||
-            physical_track->edit_rate.den <= 0) {
-            av_log(mxf->fc, AV_LOG_WARNING,
-                   "Invalid edit rate (%d/%d) found on structural"
-                   " component #%d, defaulting to 25/1\n",
-                   physical_track->edit_rate.num,
-                   physical_track->edit_rate.den, i);
-            physical_track->edit_rate = (AVRational){25, 1};
-        }
+            if (physical_track->edit_rate.num <= 0 ||
+                physical_track->edit_rate.den <= 0) {
+                av_log(mxf->fc, AV_LOG_WARNING,
+                       "Invalid edit rate (%d/%d) found on structural"
+                       " component #%d, defaulting to 25/1\n",
+                       physical_track->edit_rate.num,
+                       physical_track->edit_rate.den, i);
+                physical_track->edit_rate = (AVRational){25, 1};
+            }
 
             for (k = 0; k < physical_track->sequence->structural_components_count; k++) {
                 if (!(mxf_tc = mxf_resolve_timecode_component(mxf, &physical_track->sequence->structural_components_refs[k])))
@@ -2432,6 +2432,18 @@ static int mxf_parse_structural_metadata(MXFContext *mxf)
                 default:
                     av_log(mxf->fc, AV_LOG_INFO, "Unknown frame layout type: %d\n", descriptor->frame_layout);
             }
+
+            if (st->codecpar->codec_id == AV_CODEC_ID_PRORES) {
+                switch (descriptor->essence_codec_ul[14]) {
+                case 1: st->codecpar->codec_tag = MKTAG('a','p','c','o'); break;
+                case 2: st->codecpar->codec_tag = MKTAG('a','p','c','s'); break;
+                case 3: st->codecpar->codec_tag = MKTAG('a','p','c','n'); break;
+                case 4: st->codecpar->codec_tag = MKTAG('a','p','c','h'); break;
+                case 5: st->codecpar->codec_tag = MKTAG('a','p','4','h'); break;
+                case 6: st->codecpar->codec_tag = MKTAG('a','p','4','x'); break;
+                }
+            }
+
             if (st->codecpar->codec_id == AV_CODEC_ID_RAWVIDEO) {
                 st->codecpar->format = descriptor->pix_fmt;
                 if (st->codecpar->format == AV_PIX_FMT_NONE) {
